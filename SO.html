@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise Interativa: SO e Desempenho de Jogos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Cyberpunk Neon -->
+    <!-- Application Structure Plan: A estrutura da aplicação foi projetada como um painel de controle com abas para uma exploração não linear e focada. As seções são "Visão Geral", "Deadlock", "Gerenciamento de Memória" e "Otimizações & Futuro". Esta abordagem permite ao usuário ir diretamente ao tópico de seu interesse, como 'Deadlock' ou 'Memória', que são os pilares do relatório. A interatividade é focada em tornar conceitos complexos (como as condições de Coffman e a hierarquia de memória) visualmente compreensível, melhorando a retenção da informação em comparação com a leitura de um documento estático. -->
+    <!-- Visualization & Content Choices: Report Info: Hierarquia de memória -> Goal: Comparar -> Viz/Presentation Method: Gráfico de Barras Horizontais (Chart.js) -> Interaction: Hover para ver valores exatos -> Justification: Visualizar a disparidade drástica nas velocidades de acesso é mais impactante do que ler os números. | Report Info: Condições de Coffman -> Goal: Organizar/Informar -> Viz/Presentation Method: Diagrama interativo com caixas clicáveis (HTML/CSS/JS) -> Interaction: Clique para revelar detalhes -> Justification: Transforma uma lista estática em um elemento de descoberta, incentivando o engajamento do usuário. | Report Info: Desafios de VRAM -> Goal: Comparar -> Viz/Presentation Method: Gráfico de Barras (Chart.js) -> Interaction: Hover para ver detalhes -> Justification: Ilustra concretamente o desafio de VRAM ao comparar a demanda dos jogos com a oferta das GPUs. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #0f0c29;
+            color: #e0e0e0;
+            background-image: linear-gradient(to right top, #051937, #001a3a, #001b3c, #001c3d, #031d3e);
+        }
+        
+        .font-display {
+            font-family: 'Orbitron', sans-serif;
+        }
+        
+        .glass-card {
+            background: rgba(26, 26, 46, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+        }
+        
+        .tab-button {
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .tab-button.active {
+            color: #00ffff;
+            border-bottom-color: #00ffff;
+            text-shadow: 0 0 8px #00ffff;
+        }
+        
+        .tab-button:hover {
+            color: #00ffff;
+        }
+        
+        .content-section {
+            display: none;
+        }
+        
+        .content-section.active {
+            display: block;
+        }
+        
+        .neon-text {
+            color: #00ffff;
+            text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 15px #4d4dff;
+        }
+        
+        .coffman-condition {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 0, 255, 0.3);
+        }
+        
+        .coffman-condition:hover,
+        .coffman-condition.active {
+            background-color: rgba(255, 0, 255, 0.1);
+            border-color: rgba(255, 0, 255, 0.8);
+            transform: translateY(-5px);
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+        }
+        
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+        
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8">
+
+        <header class="text-center mb-8 md:mb-12">
+            <h1 class="font-display text-3xl md:text-5xl font-bold neon-text mb-2">Sistemas Operacionais e Desempenho de Jogos</h1>
+            <p class="text-sm md:text-base text-gray-400">Uma Análise Interativa por Carllos D. A. Fagundes, Marcelo Magalhães & Warley Lopes</p>
+        </header>
+
+        <nav class="flex justify-center border-b border-gray-700 mb-8">
+            <button class="tab-button font-display p-4 active" onclick="showTab('overview')">Visão Geral</button>
+            <button class="tab-button font-display p-4" onclick="showTab('deadlock')">Deadlock</button>
+            <button class="tab-button font-display p-4" onclick="showTab('memory')">Gerenciamento de Memória</button>
+            <button class="tab-button font-display p-4" onclick="showTab('optimization')">Otimizações & Futuro</button>
+        </nav>
+
+        <main>
+            <!-- Visão Geral -->
+            <section id="overview" class="content-section active">
+                <div class="glass-card rounded-lg p-6 mb-8 animate-fade-in">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">Introdução</h2>
+                    <p class="text-gray-300">Este painel interativo explora o impacto crucial do Sistema Operacional (SO) no desempenho de jogos digitais. Jogos modernos, com suas exigências de alto desempenho e multithreading massivo, dependem intrinsecamente de como o SO gerencia
+                        recursos críticos como CPU, memória e I/O. Focaremos nos dois maiores desafios: <b class="text-fuchsia-400">deadlock</b> e <b class="text-cyan-400">gerenciamento de memória</b>.</p>
+                </div>
+
+                <div class="glass-card rounded-lg p-6 animate-fade-in-delay">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">O Papel Crucial do SO em Jogos</h2>
+                    <p class="text-gray-300 mb-6">O Sistema Operacional atua como a espinha dorsal que sustenta a complexa arquitetura de um jogo moderno. Ele não é apenas uma camada de software, mas um gerente de recursos ativo que influencia diretamente a experiência do jogador.
+                        Explore abaixo as suas funções essenciais.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-colors">
+                            <h3 class="font-display text-lg text-cyan-400 mb-2">Ponte Essencial</h3>
+                            <p class="text-sm">Conecta o hardware (CPU, GPU) ao software do jogo, traduzindo instruções e garantindo a comunicação.</p>
+                        </div>
+                        <div class="border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-colors">
+                            <h3 class="font-display text-lg text-cyan-400 mb-2">Milhares de Threads</h3>
+                            <p class="text-sm">Aloca e escalona centenas, às vezes milhares, de threads simultâneas para IA, física, áudio e mais.</p>
+                        </div>
+                        <div class="border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-colors">
+                            <h3 class="font-display text-lg text-cyan-400 mb-2">Gestão de Recursos</h3>
+                            <p class="text-sm">Gerencia CPU, RAM, VRAM e I/O de forma eficiente, evitando gargalos que causam quedas de FPS.</p>
+                        </div>
+                        <div class="border border-cyan-500/30 p-4 rounded-lg hover:bg-cyan-900/20 transition-colors">
+                            <h3 class="font-display text-lg text-cyan-400 mb-2">Impacto Direto</h3>
+                            <p class="text-sm">Influencia diretamente a latência, a taxa de quadros por segundo (FPS) e a estabilidade geral do jogo.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Deadlock -->
+            <section id="deadlock" class="content-section">
+                <div class="glass-card rounded-lg p-6 mb-8">
+                    <h2 class="font-display text-2xl font-bold mb-4" style="color:#ff00ff; text-shadow: 0 0 8px #ff00ff;">Deadlock: O Congelamento Silencioso</h2>
+                    <p class="text-gray-300 mb-6">Um deadlock, ou impasse, é uma das condições mais problemáticas em computação concorrente e um pesadelo para desenvolvedores de jogos. Ocorre quando dois ou mais processos (ou threads) ficam permanentemente bloqueados, cada um esperando
+                        por um recurso que o outro detém. O resultado para o jogador? Um jogo congelado, NPCs paralisados ou um crash completo. Para que um deadlock ocorra, quatro condições, conhecidas como condições de Coffman, devem ser satisfeitas
+                        simultaneamente. Clique em cada condição abaixo para entender seu papel.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="coffman-grid">
+                        <div class="coffman-condition p-4 rounded-lg" data-title="Exclusão Mútua" data-text="Um recurso só pode ser usado por um processo de cada vez. Ex: Apenas uma thread pode escrever em uma posição de memória específica.">
+                            <h3 class="font-bold text-lg text-fuchsia-400">1. Exclusão Mútua</h3>
+                        </div>
+                        <div class="coffman-condition p-4 rounded-lg" data-title="Posse e Espera" data-text="Um processo detém pelo menos um recurso e solicita recursos adicionais que estão sendo mantidos por outros processos.">
+                            <h3 class="font-bold text-lg text-fuchsia-400">2. Posse e Espera</h3>
+                        </div>
+                        <div class="coffman-condition p-4 rounded-lg" data-title="Não Preempção" data-text="Um recurso não pode ser forçadamente tomado de um processo. Ele só pode ser liberado voluntariamente pelo processo que o detém.">
+                            <h3 class="font-bold text-lg text-fuchsia-400">3. Não Preempção</h3>
+                        </div>
+                        <div class="coffman-condition p-4 rounded-lg" data-title="Espera Circular" data-text="Existe um conjunto de processos {P0, P1, ... Pn} onde P0 está esperando por um recurso de P1, P1 por P2, e Pn pelo recurso de P0.">
+                            <h3 class="font-bold text-lg text-fuchsia-400">4. Espera Circular</h3>
+                        </div>
+                    </div>
+                    <div id="coffman-details" class="mt-6 p-4 bg-black/30 rounded-lg min-h-[100px] border border-fuchsia-500/30">
+                        <h4 id="coffman-title" class="font-bold text-xl text-fuchsia-300 mb-2">Selecione uma condição</h4>
+                        <p id="coffman-text" class="text-gray-300">Passe o mouse ou clique em uma das quatro condições acima para ver sua descrição aqui.</p>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-lg p-6">
+                    <h3 class="font-display text-xl font-bold mb-4" style="color:#ff00ff; text-shadow: 0 0 8px #ff00ff;">Cenários Práticos em Jogos</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="font-bold text-fuchsia-400">Contenção de Recursos</h4>
+                            <p class="text-sm text-gray-300">Em motores como Unity e Unreal, threads de renderização, física e IA competem por acesso a dados compartilhados (ex: a posição de um personagem), criando um campo minado para deadlocks se o acesso não for cuidadosamente gerenciado
+                                com locks e mutexes.</p>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-fuchsia-400">Exemplos de Falhas</h4>
+                            <p class="text-sm text-gray-300">O resultado visível de um deadlock pode ser uma animação que congela no meio do ciclo, um NPC que para de se mover, ou o jogo inteiro para de responder, forçando o jogador a reiniciar. Em casos graves, pode causar uma queda
+                                instantânea de FPS para zero.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Memory Management -->
+            <section id="memory" class="content-section">
+                <div class="glass-card rounded-lg p-6 mb-8">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">Gerenciamento de Memória: A Hierarquia da Velocidade</h2>
+                    <p class="text-gray-300 mb-6">O desempenho de um jogo está diretamente ligado à rapidez com que ele pode acessar dados. O SO gerencia uma complexa hierarquia de memória, onde cada nível oferece um balanço diferente entre velocidade, capacidade e custo. Acessar
+                        dados da VRAM é ordens de magnitude mais rápido que do SSD, um fator crucial para evitar "stuttering" (engasgos) durante o gameplay. O gráfico abaixo ilustra a latência de acesso relativa, mostrando por que a gestão eficiente de
+                        memória é vital.</p>
+                    <div class="chart-container">
+                        <canvas id="memoryHierarchyChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="glass-card rounded-lg p-6">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">Desafios de Memória em Jogos AAA</h2>
+                    <p class="text-gray-300 mb-6">Jogos modernos, com seus mundos abertos e texturas de altíssima resolução, empurram os limites da memória do sistema e da GPU. Gerenciar essa vasta quantidade de dados é um dos maiores desafios técnicos no desenvolvimento de jogos.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-bold text-cyan-400">Vazamentos de Memória</h4>
+                                <p class="text-sm text-gray-300">Alocações de memória que não são liberadas após o uso. O consumo de RAM aumenta progressivamente, levando a lentidão e eventuais crashes após longas sessões de jogo.</p>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-cyan-400">Fragmentação</h4>
+                                <p class="text-sm text-gray-300">Múltiplas alocações e liberações deixam a memória cheia de pequenos blocos livres, mas nenhum grande o suficiente para um novo asset grande, impactando a performance.</p>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-bold text-cyan-400">Saturação de VRAM</h4>
+                                <p class="text-sm text-gray-300">Texturas em 4K/8K, modelos complexos e ray tracing podem facilmente exceder a VRAM disponível (12GB-24GB+), forçando o uso da RAM do sistema, que é muito mais lenta.</p>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-cyan-400">Carregamento de Assets</h4>
+                                <p class="text-sm text-gray-300">O famoso "stuttering" ocorre quando o jogo precisa carregar novos assets do SSD/HDD para a RAM/VRAM em tempo real, causando uma pausa momentânea no gameplay.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-8">
+                        <h3 class="font-display text-xl text-center font-bold mb-4 neon-text">Demanda de VRAM em Jogos Modernos</h3>
+                        <div class="chart-container h-72 max-h-80">
+                            <canvas id="vramUsageChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Optimization -->
+            <section id="optimization" class="content-section">
+                <div class="glass-card rounded-lg p-6 mb-8">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">Estratégias de Otimização e Prevenção</h2>
+                    <p class="text-gray-300 mb-6">Para combater os problemas de deadlock e memória, desenvolvedores e o próprio sistema operacional empregam uma variedade de técnicas sofisticadas. Estas estratégias são essenciais para garantir uma experiência de jogo fluida e estável.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <h3 class="font-display text-xl font-bold mb-4 text-fuchsia-400">Combatendo Deadlocks</h3>
+                            <ul class="space-y-3 list-disc list-inside text-gray-300">
+                                <li><b class="font-semibold">Prevenção:</b> A estratégia mais comum. Força uma ordem no acesso aos recursos, quebrando a condição de 'Espera Circular'.</li>
+                                <li><b class="font-semibold">Detecção e Recuperação:</b> O SO monitora a alocação de recursos e, se um deadlock é detectado, pode abortar um dos processos para liberar o sistema.</li>
+                                <li><b class="font-semibold">Timeouts:</b> Usar mutexes e semáforos com um tempo limite. Se um recurso não for obtido dentro do prazo, a operação falha e pode ser tentada novamente.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="font-display text-xl font-bold mb-4 text-cyan-400">Gerenciando Memória</h3>
+                            <ul class="space-y-3 list-disc list-inside text-gray-300">
+                                <li><b class="font-semibold">Memory Pooling:</b> Pré-alocar um grande bloco de memória no início e gerenciá-lo internamente, evitando a fragmentação.</li>
+                                <li><b class="font-semibold">Alocadores Customizados:</b> Motores de jogos frequentemente usam seus próprios alocadores de memória, otimizados para padrões de uso específicos de jogos.</li>
+                                <li><b class="font-semibold">Streaming de Assets:</b> Carregar dados do disco de forma assíncrona e em segundo plano, apenas quando são necessários, para evitar stuttering.</li>
+                                <li><b class="font-semibold">Compressão de Texturas:</b> Usar formatos como BCn para reduzir o tamanho das texturas na VRAM sem grande perda de qualidade visual.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card rounded-lg p-6">
+                    <h2 class="font-display text-2xl font-bold mb-4 neon-text">Perspectivas Futuras</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+                        <div>
+                            <h3 class="font-display text-lg mb-2 text-gray-300">SO Essencial</h3>
+                            <p class="text-sm text-gray-400">Continuará sendo o pilar para desempenho e estabilidade em jogos cada vez mais complexos.</p>
+                        </div>
+                        <div>
+                            <h3 class="font-display text-lg mb-2 text-gray-300">Futuro com IA</h3>
+                            <p class="text-sm text-gray-400">O SO poderá usar IA para otimizar a alocação de recursos e o escalonamento de threads em tempo real.</p>
+                        </div>
+                        <div>
+                            <h3 class="font-display text-lg mb-2 text-gray-300">Desafios Contínuos</h3>
+                            <p class="text-sm text-gray-400">Deadlock e gerenciamento de memória continuarão sendo desafios-chave, mas com ferramentas mais robustas.</p>
+                        </div>
+                        <div>
+                            <h3 class="font-display text-lg mb-2 text-gray-300">Novas Tendências</h3>
+                            <p class="text-sm text-gray-400">CPUs com mais núcleos e I/O ultra-rápido (NVMe, DirectStorage) mudarão as estratégias de otimização.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+    </div>
+
+    <script>
+        const tabs = document.querySelectorAll('.tab-button');
+        const sections = document.querySelectorAll('.content-section');
+
+        function showTab(tabId) {
+            tabs.forEach(tab => {
+                tab.classList.remove('active');
+                if (tab.getAttribute('onclick').includes(tabId)) {
+                    tab.classList.add('active');
+                }
+            });
+            sections.forEach(section => {
+                section.classList.remove('active');
+                if (section.id === tabId) {
+                    section.classList.add('active');
+                }
+            });
+        }
+
+        const coffmanGrid = document.getElementById('coffman-grid');
+        const coffmanTitle = document.getElementById('coffman-title');
+        const coffmanText = document.getElementById('coffman-text');
+        const coffmanConditions = document.querySelectorAll('.coffman-condition');
+
+        coffmanGrid.addEventListener('click', (e) => {
+            const condition = e.target.closest('.coffman-condition');
+            if (!condition) return;
+
+            coffmanConditions.forEach(c => c.classList.remove('active'));
+            condition.classList.add('active');
+
+            coffmanTitle.textContent = condition.dataset.title;
+            coffmanText.textContent = condition.dataset.text;
+        });
+
+        const memoryHierarchyCtx = document.getElementById('memoryHierarchyChart').getContext('2d');
+        const vramUsageCtx = document.getElementById('vramUsageChart').getContext('2d');
+
+        const chartTextColor = '#e0e0e0';
+        const chartGridColor = 'rgba(255, 255, 255, 0.1)';
+
+        Chart.defaults.font.family = "'Roboto Mono', monospace";
+        Chart.defaults.color = chartTextColor;
+
+        const memoryHierarchyChart = new Chart(memoryHierarchyCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Cache L1 (CPU)', 'RAM (DDR5)', 'VRAM (GDDR6X)', 'SSD (NVMe Gen4)', 'HDD (7200rpm)'],
+                datasets: [{
+                    label: 'Latência de Acesso (logarítmica)',
+                    data: [1, 70, 150, 25000, 4000000],
+                    backgroundColor: [
+                        'rgba(0, 255, 255, 0.7)',
+                        'rgba(0, 255, 255, 0.6)',
+                        'rgba(0, 255, 255, 0.5)',
+                        'rgba(0, 255, 255, 0.4)',
+                        'rgba(0, 255, 255, 0.3)',
+                    ],
+                    borderColor: 'rgba(0, 255, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'logarithmic',
+                        ticks: {
+                            color: chartTextColor,
+                            callback: function(value, index, values) {
+                                if (value === 1) return '1 ns';
+                                if (value === 1000) return '1 µs';
+                                if (value === 1000000) return '1 ms';
+                                return value;
+                            }
+                        },
+                        grid: {
+                            color: chartGridColor
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            color: chartTextColor
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                let value = context.raw;
+                                if (value < 1000) return label + value + ' nanosegundos';
+                                if (value < 1000000) return label + (value / 1000) + ' microssegundos';
+                                return label + (value / 1000000) + ' milissegundos';
+                            }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Latência de Acesso à Memória (Escala Logarítmica)',
+                        color: chartTextColor,
+                        font: {
+                            size: 16
+                        }
+                    }
+                }
+            }
+        });
+
+        const vramUsageChart = new Chart(vramUsageCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Jogo Típico (1440p)', 'Jogo AAA (4K Ultra)', 'Jogo c/ Ray Tracing (4K)'],
+                datasets: [{
+                    label: 'VRAM Necessária (GB)',
+                    data: [10, 16, 22],
+                    backgroundColor: 'rgba(255, 0, 255, 0.7)',
+                    borderColor: 'rgba(255, 0, 255, 1)',
+                    borderWidth: 1
+                }, {
+                    label: 'GPU Comum (GB)',
+                    data: [12, 12, 12],
+                    backgroundColor: 'rgba(0, 255, 255, 0.4)',
+                    borderColor: 'rgba(0, 255, 255, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: chartTextColor,
+                            callback: function(value) {
+                                return value + ' GB'
+                            }
+                        },
+                        grid: {
+                            color: chartGridColor
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: chartTextColor
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: chartTextColor
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw} GB`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+
+</body>
+
+</html>
